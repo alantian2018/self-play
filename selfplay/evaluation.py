@@ -48,8 +48,7 @@ def evaluate(agent, self_play, experiment=None, num_games=64, num_envs=32):
             records = []
             pairs = collector.play_games(envs, agent, num_games, records=records)
             rewards = np.array([sum(current.reward) for current, _ in pairs])
-            losses = np.flatnonzero(rewards < 0)
-            selected = int(np.random.choice(losses if losses.size else np.arange(num_games)))
+            selected = int(np.random.choice(np.arange(num_games)))
             record = records[selected]
             metrics = {
                 'eval/mean_reward': rewards.mean(),
