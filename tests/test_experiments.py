@@ -133,6 +133,65 @@ class ExperimentsTest(unittest.TestCase):
             for env in envs:
                 env.close()
 
+    def test_pool_evicts_easiest_and_preserves_ids_and_statistics(self):
+        agent = get_experiment('tic_tac_toe').make_agent()
+        pool = SelfPlay(max_opponents=3)
+        for _ in range(3):
+            pool.add_opponent(agent)
+        pool.winrates = [np.array([0.9, 0.1]), np.array([0.75, 0.85]), np.array([0.6, 0.6])]
+        pool.opponent_games = [np.array([10, 20]), np.array([30, 40]), np.array([50, 60])]
+        pool.add_opponent(agent)
+        self.assertEqual(pool.opponent_ids, [0, 2, 3])
+        np.testing.assert_allclose(pool.winrates, [[0.9, 0.1], [0.6, 0.6], [0.5, 0.5]])
+        np.testing.assert_array_equal(pool.opponent_games, [[10, 20], [50, 60], [0, 0]])
+        # Even when the new 0.5 prior is highest, retain the new snapshot.
+        for wr, score in zip(pool.winrates, (0.1, 0.2, 0.3)):
+            wr[:] = score
+        pool.add_opponent(agent)
+        self.assertEqual(pool.opponent_ids, [0, 2, 4])
+        self.assertEqual(pool.next_opponent_id, 5)
+        self.assertTrue(all(not p.requires_grad for opp in pool.opponents for p in opp.parameters()))
+
+        env = get_experiment('tic_tac_toe').make_env()
+        try:
+            records = []
+            with patch.object(pool, 'sample_opponent', return_value=(pool.opponents[2], 2)):
+                pool.play_games([env], agent, 3, records=records)
+            self.assertEqual([record['opponent'] for record in records], [4, 4, 4])
+            self.assertEqual(pool.opponent_games[2].sum(), 3)
+        finally:
+            env.close()
+        single = SelfPlay(max_opponents=1)
+        single.add_opponent(agent)
+        single.add_opponent(agent)
+        self.assertEqual(single.opponent_ids, [1])
+
+    def test_restore_smaller_pool_uses_saved_scores_and_legacy_ids(self):
+        agent = get_experiment('tic_tac_toe').make_agent()
+        pool = SelfPlay(max_opponents=5)
+        for score in (0.1, 0.9, 0.4, 0.8, 0.2):
+            pool.add_opponent(agent)
+            pool.winrates[-1][:] = score
+            pool.opponent_games[-1][:] = pool.opponent_ids[-1] + 10
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / 'pool.pt'
+            save_checkpoint(path, agent, torch.optim.Adam(agent.parameters()), pool, 1, 0, 5)
+            original = torch.load(path, weights_only=True)
+            for legacy in (False, True):
+                state = original.copy()
+                if legacy:
+                    del state['opponent_ids'], state['next_opponent_id']
+                torch.save(state, path)
+                restored = get_experiment('tic_tac_toe').make_agent()
+                smaller = SelfPlay(max_opponents=2)
+                load_checkpoint(path, restored, torch.optim.Adam(restored.parameters()), smaller)
+                self.assertEqual(smaller.opponent_ids, [0, 4])
+                self.assertEqual(smaller.next_opponent_id, 5)
+                np.testing.assert_allclose(smaller.winrates, [[0.1, 0.1], [0.2, 0.2]])
+                np.testing.assert_array_equal(smaller.opponent_games, [[10, 10], [14, 14]])
+                smaller.add_opponent(restored)
+                self.assertEqual(smaller.opponent_ids, [0, 5])
+
     def test_connect4_horizontal_symmetry(self):
         experiment = get_experiment('connect4')
         agent = experiment.make_agent()
@@ -174,6 +233,7 @@ class ExperimentsTest(unittest.TestCase):
                 args = get_experiment(name).default_args()
                 args.seed, args.num_iterations, args.games_per_update = 3, 4, 5
                 args.num_envs, args.eval_every, args.update_epochs, args.save_every = 3, 0, 1, 2
+                args.max_opponents = 2  # Exercise eviction during training and resume.
                 args.checkpoint_dir = str(Path(temp) / 'full')
                 run = MagicMock()
                 run.id = 'test'

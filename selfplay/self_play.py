@@ -11,8 +11,13 @@ def random_policy(obs):
 
 
 class SelfPlay:
-    def __init__(self, alpha=0.02):
+    def __init__(self, alpha=0.02, max_opponents=20):
+        if max_opponents < 1:
+            raise ValueError("max_opponents must be at least 1")
         self.opponents = []
+        self.opponent_ids = []
+        self.next_opponent_id = 0
+        self.max_opponents = max_opponents
         self.winrates = []
         self.opponent_games = []
         self.random_winrates = np.array([0.5, 0.5])
@@ -43,7 +48,8 @@ class SelfPlay:
                 game = self._game(env, current_policy, opponent, idx,
                                   starting_idx=starting_idx, action_trace=trace)
                 if records is not None:
-                    game_records[game] = {"opponent": idx, "starting_idx": starting_idx, "actions": trace}
+                    opponent_id = self.opponent_ids[idx] if idx is not None else None
+                    game_records[game] = {"opponent": opponent_id, "starting_idx": starting_idx, "actions": trace}
                 policy, obs = next(game)
                 active.append((game, policy, obs))
 
@@ -121,9 +127,20 @@ class SelfPlay:
         if isinstance(opp, nn.Module):
             opp.eval()
             opp.requires_grad_(False)
+        self.trim_opponents(self.max_opponents - 1)
         self.opponents.append(opp)
+        self.opponent_ids.append(self.next_opponent_id)
+        self.next_opponent_id += 1
         self.winrates.append(np.array([0.5, 0.5]))  # Going first, going second.
         self.opponent_games.append(np.zeros(2, dtype=int))
+
+    def trim_opponents(self, limit=None):
+        """Evict the easiest existing opponents, averaging scores over both seats."""
+        limit = self.max_opponents if limit is None else limit
+        while len(self.opponents) > limit:
+            idx = int(np.argmax(np.mean(self.winrates, axis=1)))
+            for collection in (self.opponents, self.opponent_ids, self.winrates, self.opponent_games):
+                collection.pop(idx)
 
     def sample_opponent(self, starting_idx):
         """Prefer opponents that are harder for the current policy in this seat."""

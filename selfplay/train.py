@@ -19,12 +19,14 @@ def train(args):
         raise ValueError("save_every must be at least 1")
     if args.num_envs < 1 or args.games_per_update < 1:
         raise ValueError("num_envs and games_per_update must be at least 1")
+    if not 0 <= args.winrate_threshold <= 1 or args.min_opponent_games < 0:
+        raise ValueError("winrate_threshold must be in [0, 1] and min_opponent_games must be nonnegative")
     if args.seed is not None:
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
     experiment = get_experiment(args.experiment)
     agent = experiment.make_agent()
-    self_play = SelfPlay()
+    self_play = SelfPlay(max_opponents=args.max_opponents)
     optimizer = torch.optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     state = load_checkpoint(args.checkpoint, agent, optimizer, self_play, experiment.make_agent) if args.checkpoint else {}
     if not self_play.opponents:
@@ -48,8 +50,8 @@ def train(args):
                 rollouts = [current for current, _ in pairs]
                 metrics = update(agent, optimizer, rollouts, args)
                 if (
-                    (all(wr.mean() > 0.6 for wr in self_play.winrates)
-                     and all(counts.sum() > 2000 for counts in self_play.opponent_games))
+                    (all(wr.mean() > args.winrate_threshold for wr in self_play.winrates)
+                     and all(counts.sum() > args.min_opponent_games for counts in self_play.opponent_games))
                     or iteration + 1 - last_snapshot >= 0.1 * args.num_iterations
                 ):
                     self_play.add_opponent(agent)
@@ -67,16 +69,16 @@ def train(args):
                     ]),
                     "train/games": games,
                     "train/lowest_winrate": mean_winrates[lowest],
-                    "train/lowest_winrate_opponent": lowest,
+                    "train/lowest_winrate_opponent": self_play.opponent_ids[lowest],
                     "self_play/opponents": len(self_play.opponents),
                 })
                 winrates = {"random": self_play.random_winrates}
-                winrates.update({f"opponent_{i}": wr for i, wr in enumerate(self_play.winrates)})
+                winrates.update({f"opponent_{i}": wr for i, wr in zip(self_play.opponent_ids, self_play.winrates)})
                 for name, wr in winrates.items():
                     metrics[f"winrate/{name}"] = wr.mean()
                     metrics[f"winrate_first/{name}"] = wr[0]
                     metrics[f"winrate_second/{name}"] = wr[1]
-                for i, counts in enumerate(self_play.opponent_games):
+                for i, counts in zip(self_play.opponent_ids, self_play.opponent_games):
                     metrics[f"games/opponent_{i}"] = counts.sum()
                 if args.eval_every and (
                     (iteration + 1) % args.eval_every == 0 or iteration + 1 == args.num_iterations
@@ -98,8 +100,9 @@ def main(default_experiment="connect4"):
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment", choices=("connect4", "tic_tac_toe"), default=default_experiment)
     for name in ("checkpoint", "checkpoint_dir", "save_every", "num_iterations", "num_envs",
-                 "games_per_update", "eval_every", "eval_games", "eval_num_envs", "seed"):
-        kind = str if name in ("checkpoint", "checkpoint_dir") else int
+                 "games_per_update", "eval_every", "eval_games", "eval_num_envs", "seed",
+                 "winrate_threshold", "min_opponent_games", "max_opponents"):
+        kind = {"checkpoint": str, "checkpoint_dir": str, "winrate_threshold": float}.get(name, int)
         parser.add_argument("--" + name.replace("_", "-"), type=kind, default=argparse.SUPPRESS)
     options = vars(parser.parse_args())
     args = get_experiment(options["experiment"]).default_args()

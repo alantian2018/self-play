@@ -15,6 +15,8 @@ class Args(PPOArgs):
     eval_every: int = 1000
     eval_games: int = 64
     eval_num_envs: int = 32
+    winrate_threshold: float = 0.6
+    min_opponent_games: int = 2000
     learning_rate: float = 2.5e-4
     minibatch_size: int = 64
     update_epochs: int = 4

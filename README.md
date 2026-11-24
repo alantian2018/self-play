@@ -52,7 +52,10 @@ those of frozen opponents; start a fresh run to avoid stale saved win rates.
 
 Connect 4 retains the existing settings, including 5% random opponents,
 seat-specific EMA scores with alpha 0.02, and promotion above 60% against every
-frozen opponent after more than 2,000 games each. A snapshot is also forced after
+frozen opponent after more than 200 games each. Configure these gates with
+`winrate_threshold` and `min_opponent_games` in each experiment's config, or
+`--winrate-threshold 0.6 --min-opponent-games 200`. Both comparisons are strict:
+the scores and counts must exceed these values. A snapshot is also forced after
 10% of the total target iterations without one. Tic-tac-toe uses gamma 1.0;
 its training length and checkpoint interval are set in its own config.
 
@@ -60,6 +63,13 @@ Collection chooses the current policy's starting seat with equal probability,
 then samples frozen opponents proportionally to `1 - winrate[opponent, seat]`.
 The same selected seat is used to play the game and update its score. Promotion
 and the main W&B win-rate curves still use the average of both seats.
+
+`max_opponents` caps the frozen pool (default 20, also configurable with
+`--max-opponents`). When adding a snapshot at capacity, the existing opponent
+with the highest average score is evicted: the one the current policy beats most
+easily. The new snapshot is retained. Random is not counted. Opponent IDs stay
+stable after eviction so W&B curves continue to refer to the same frozen policy.
+Resuming with a smaller cap trims the restored pool using its saved scores.
 
 Checkpoints go to `checkpoints/connect4/<run-datetime>/` or
 `checkpoints/tic_tac_toe/<run-datetime>/`, with chronologically sortable local

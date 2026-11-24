@@ -37,6 +37,7 @@ def evaluate(agent, self_play, experiment=None, num_games=64, num_envs=32):
     # Use training's sampling scores, held fixed throughout evaluation.
     collector = SelfPlay(alpha=0)
     collector.opponents = self_play.opponents
+    collector.opponent_ids = self_play.opponent_ids.copy()
     collector.winrates = [wr.copy() for wr in self_play.winrates]
     collector.opponent_games = [np.zeros(2, dtype=int) for _ in self_play.opponents]
     envs = []

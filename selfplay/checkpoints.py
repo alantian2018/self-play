@@ -12,6 +12,8 @@ def save_checkpoint(path, agent, optimizer, self_play, iteration, last_snapshot,
         "policy_class": f"{type(agent).__module__}.{type(agent).__qualname__}",
         "optimizer": optimizer.state_dict(),
         "opponents": [opp.state_dict() for opp in self_play.opponents],
+        "opponent_ids": self_play.opponent_ids,
+        "next_opponent_id": self_play.next_opponent_id,
         "winrates": [wr.tolist() for wr in self_play.winrates],
         "opponent_games": [counts.tolist() for counts in self_play.opponent_games],
         "random_winrates": self_play.random_winrates.tolist(),
@@ -37,10 +39,13 @@ def load_checkpoint(path, agent, optimizer, self_play, make_agent=None):
     if "agent" not in state:  # Older checkpoints contain only model weights.
         return {}
     optimizer.load_state_dict(state["optimizer"])
+    self_play.opponents = []
     for weights in state["opponents"]:
         opponent = make_agent() if make_agent is not None else deepcopy(agent)
         opponent.load_state_dict(weights)
-        self_play.add_opponent(opponent)
+        self_play.opponents.append(opponent.eval().requires_grad_(False))
+    self_play.opponent_ids = list(state.get("opponent_ids", range(len(self_play.opponents))))
+    self_play.next_opponent_id = state.get("next_opponent_id", max(self_play.opponent_ids, default=-1) + 1)
     self_play.winrates = [np.array(wr) for wr in state["winrates"]]
     self_play.opponent_games = [
         np.array(counts, dtype=int)
@@ -48,4 +53,5 @@ def load_checkpoint(path, agent, optimizer, self_play, make_agent=None):
     ]
     self_play.random_winrates = np.array(state["random_winrates"])
     self_play.alpha = state["alpha"]
+    self_play.trim_opponents()
     return state

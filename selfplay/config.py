@@ -15,6 +15,9 @@ class Args:
     eval_every: int = 50  # Set to 0 to disable evaluation videos.
     eval_games: int = 64
     eval_num_envs: int = 32
+    max_opponents: int = 100
+    winrate_threshold: float = 0.7
+    min_opponent_games: int = 200
     learning_rate: float = 2.5e-4
     minibatch_size: int = 64
     update_epochs: int = 4
