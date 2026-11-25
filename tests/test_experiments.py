@@ -1,4 +1,5 @@
 from functools import cache
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -14,7 +15,7 @@ from tqdm import trange
 
 from experiments import get_experiment
 from experiments.tic_tac_toe.minimax import evaluation_metrics, minimax_policy, value
-from selfplay.checkpoints import load_checkpoint, save_checkpoint
+from selfplay.checkpoints import export_checkpoint, latest_checkpoint, load_checkpoint, save_checkpoint
 from selfplay.evaluation import evaluate
 from selfplay.ppo import make_batch, update
 from selfplay.self_play import SelfPlay, random_policy
@@ -357,6 +358,46 @@ class ExperimentsTest(unittest.TestCase):
             tic = get_experiment('tic_tac_toe').make_agent()
             with self.assertRaisesRegex(ValueError, 'architecture|policy'):
                 load_checkpoint(path, tic, torch.optim.Adam(tic.parameters()), SelfPlay())
+
+    def test_model_only_release_export_and_warm_start(self):
+        for name in ('connect4', 'tic_tac_toe'):
+            with self.subTest(experiment=name), TemporaryDirectory() as temp:
+                experiment = get_experiment(name)
+                agent = experiment.make_agent()
+                pool = SelfPlay()
+                pool.add_opponent(agent)
+                pool.add_opponent(agent)
+                training = Path(temp) / 'training.pt'
+                release = Path(temp) / 'release' / 'model.pt'
+                save_checkpoint(training, agent, torch.optim.Adam(agent.parameters()), pool, 10, 5, 100)
+                export_checkpoint(training, release)
+                state = torch.load(release, weights_only=True)
+                self.assertEqual(set(state), {'checkpoint_type', 'agent', 'policy_class', 'policy_version', 'iteration'})
+                self.assertEqual(state['checkpoint_type'], 'release')
+                self.assertLess(release.stat().st_size, training.stat().st_size)
+                restored = experiment.make_agent()
+                restored_pool = SelfPlay()
+                optimizer = torch.optim.Adam(restored.parameters())
+                self.assertEqual(load_checkpoint(release, restored, optimizer, restored_pool, experiment.make_agent), {})
+                self.assert_state_equal(agent.state_dict(), restored.state_dict())
+                self.assertEqual(restored_pool.opponents, [])
+                self.assertEqual(optimizer.state, {})
+                with self.assertRaises(FileExistsError):
+                    export_checkpoint(training, release)
+                self.assert_state_equal(state, torch.load(release, weights_only=True))
+
+    def test_default_viewer_prefers_releases_to_newer_training_saves(self):
+        with TemporaryDirectory() as temp, patch('selfplay.checkpoints.Path', side_effect=lambda name: Path(temp) / name):
+            self.assertIsNone(latest_checkpoint('tic_tac_toe'))
+            training = Path(temp) / 'checkpoints' / 'tic_tac_toe' / 'run' / 'training.pt'
+            training.parent.mkdir(parents=True)
+            training.touch()
+            self.assertEqual(latest_checkpoint('tic_tac_toe'), training)
+            release = Path(temp) / 'release_checkpoints' / 'tic_tac_toe' / 'release.pt'
+            release.parent.mkdir(parents=True)
+            release.touch()
+            os.utime(training, (2_000_000_000, 2_000_000_000))
+            self.assertEqual(latest_checkpoint('tic_tac_toe'), release)
 
     def test_bring_your_own_policy_and_factory_resume(self):
         # No Policy base class, CNN, encoder, actor, critic, or shape attributes.

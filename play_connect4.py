@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 import torch
 
 from experiments.connect4 import make_agent, make_env
+from selfplay.checkpoints import latest_checkpoint
 
 
 def load_agent(path):
@@ -98,7 +99,7 @@ class App:
 
     def choose(self):
         path = filedialog.askopenfilename(
-            initialdir="checkpoints/connect4",
+            initialdir="release_checkpoints/connect4",
             filetypes=[("PyTorch checkpoints", "*.pt *.pth"), ("All files", "*")],
         )
         if path:
@@ -154,8 +155,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=Path)
     args = parser.parse_args()
     if args.checkpoint is None:
-        args.checkpoint = max(Path("checkpoints/connect4").rglob("*.pt"),
-                              key=lambda p: p.stat().st_mtime, default=None)
+        args.checkpoint = latest_checkpoint("connect4")
     torch.set_num_threads(1)
     root = tk.Tk()
     App(root, args.checkpoint)

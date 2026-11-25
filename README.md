@@ -15,11 +15,11 @@ pip install -r requirements.txt
 ## Play a checkpoint
 
 ```bash
-python play_connect4.py --checkpoint path/to/connect4.pt
-python play_tic_tac_toe.py --checkpoint path/to/tic_tac_toe.pt
+python play_connect4.py
+python play_tic_tac_toe.py
 ```
 
-Omit `--checkpoint` to load the newest checkpoint, or use **Load checkpoint** in the window. Choose who goes first and click to play.
+Loads a model from `release_checkpoints/<game>/` (falls back to local training saves). Use `--checkpoint path/to/model.pt` or **Load checkpoint** to choose another. Choose who goes first and click to play.
 
 ## Train
 
@@ -29,13 +29,24 @@ python -m experiments.connect4.train
 python -m experiments.tic_tac_toe.train
 ```
 
-Each game has its own `config.py` and `agent.py` under `experiments/`. Checkpoints save to `checkpoints/<game>/<run-datetime>/`.
+Each game has its own `config.py` and `agent.py` under `experiments/`. Full training checkpoints save to `checkpoints/<game>/<run-datetime>/` and are ignored by Git.
 
 Resume with a total iteration target greater than the saved iteration:
 
 ```bash
 python -m experiments.tic_tac_toe.train --checkpoint path/to/checkpoint.pt --num-iterations 200000
 ```
+
+## Release a model
+
+Export selected weights into the tracked `release_checkpoints/` directory:
+
+```bash
+python export_checkpoint.py checkpoints/tic_tac_toe/<run>/iteration_120000.pt release_checkpoints/tic_tac_toe/iteration_120000.pt
+```
+
+Releases omit optimizer state and frozen opponents. Use full training checkpoints to resume; releases can only warm-start a new run.
+
 
 ## W&B runs
 

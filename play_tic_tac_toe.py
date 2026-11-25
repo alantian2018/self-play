@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 import torch
 
 from experiments.tic_tac_toe import make_agent, make_env
+from selfplay.checkpoints import latest_checkpoint
 
 
 def load_agent(path):
@@ -94,7 +95,7 @@ class App:
 
     def choose(self):
         path = filedialog.askopenfilename(
-            initialdir="checkpoints/tic_tac_toe",
+            initialdir="release_checkpoints/tic_tac_toe",
             filetypes=[("PyTorch checkpoints", "*.pt *.pth"), ("All files", "*")],
         )
         if path:
@@ -142,8 +143,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=Path)
     args = parser.parse_args()
     if args.checkpoint is None:
-        args.checkpoint = max(Path("checkpoints/tic_tac_toe").glob("*/*.pt"),
-                              key=lambda p: p.stat().st_mtime, default=None)
+        args.checkpoint = latest_checkpoint("tic_tac_toe")
     torch.set_num_threads(1)
     root = tk.Tk()
     App(root, args.checkpoint)

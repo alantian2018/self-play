@@ -1,8 +1,31 @@
 from copy import deepcopy
+from pathlib import Path
 import warnings
 
 import numpy as np
 import torch
+
+
+def latest_checkpoint(experiment):
+    """Prefer published models; fall back to local training saves for development."""
+    for directory in ("release_checkpoints", "checkpoints"):
+        files = list((Path(directory) / experiment).rglob("*.pt"))
+        if files:
+            return max(files, key=lambda path: path.stat().st_mtime)
+    return None
+
+
+def export_checkpoint(source, destination):
+    """Export model weights and metadata without the optimizer or opponent pool."""
+    state = torch.load(source, map_location="cpu", weights_only=True)
+    release = {"checkpoint_type": "release", "agent": state.get("agent", state)}
+    for key in ("policy_class", "policy_version", "iteration"):
+        if key in state:
+            release[key] = state[key]
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("xb") as file:  # Never overwrite an existing release.
+        torch.save(release, file)
 
 
 def save_checkpoint(path, agent, optimizer, self_play, iteration, last_snapshot, games):
@@ -38,7 +61,7 @@ def load_checkpoint(path, agent, optimizer, self_play, make_agent=None):
         agent.load_state_dict(weights)
     except RuntimeError as error:
         raise ValueError("Checkpoint architecture does not match the selected policy.") from error
-    if "agent" not in state:  # Older checkpoints contain only model weights.
+    if "optimizer" not in state:  # Model-only releases start a fresh training run.
         return {}
     optimizer.load_state_dict(state["optimizer"])
     self_play.opponents = []
