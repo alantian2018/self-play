@@ -2,6 +2,6 @@ __pycache__/
 *.pyc
 .venv/
 wandb/
-checkpoints/
+
 runs/
 .vscode/settings.json
