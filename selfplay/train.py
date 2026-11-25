@@ -17,6 +17,9 @@ from .self_play import SelfPlay
 def train(args):
     if args.save_every < 1:
         raise ValueError("save_every must be at least 1")
+    if args.snapshot_every is not None and args.snapshot_every < 1:
+        raise ValueError("snapshot_every must be at least 1, or None for the default")
+    snapshot_every = args.snapshot_every if args.snapshot_every is not None else 0.1 * args.num_iterations
     if args.num_envs < 1 or args.games_per_update < 1:
         raise ValueError("num_envs and games_per_update must be at least 1")
     if not 0 <= args.winrate_threshold <= 1 or args.min_opponent_games < 0:
@@ -52,7 +55,7 @@ def train(args):
                 if (
                     (all(wr.mean() > args.winrate_threshold for wr in self_play.winrates)
                      and all(counts.sum() > args.min_opponent_games for counts in self_play.opponent_games))
-                    or iteration + 1 - last_snapshot >= 0.1 * args.num_iterations
+                    or iteration + 1 - last_snapshot >= snapshot_every
                 ):
                     self_play.add_opponent(agent)
                     last_snapshot = iteration + 1
@@ -101,7 +104,7 @@ def main(default_experiment="connect4"):
     parser.add_argument("--experiment", choices=("connect4", "tic_tac_toe"), default=default_experiment)
     for name in ("checkpoint", "checkpoint_dir", "save_every", "num_iterations", "num_envs",
                  "games_per_update", "eval_every", "eval_games", "eval_num_envs", "seed",
-                 "winrate_threshold", "min_opponent_games", "max_opponents"):
+                 "winrate_threshold", "min_opponent_games", "max_opponents", "snapshot_every"):
         kind = {"checkpoint": str, "checkpoint_dir": str, "winrate_threshold": float}.get(name, int)
         parser.add_argument("--" + name.replace("_", "-"), type=kind, default=argparse.SUPPRESS)
     options = vars(parser.parse_args())

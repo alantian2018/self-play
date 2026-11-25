@@ -80,6 +80,12 @@ easily. The new snapshot is retained. Random is not counted. Opponent IDs stay
 stable after eviction so W&B curves continue to refer to the same frozen policy.
 Resuming with a smaller cap trims the restored pool using its saved scores.
 
+Set `snapshot_every` in either experiment config (or `--snapshot-every 1000`) to
+force a new opponent after that many training iterations without a snapshot.
+The default `None` keeps the 10%-of-`num_iterations` fallback. Win-rate promotion
+can add a snapshot earlier and resets this timer. These are PPO iterations,
+not individual moves or games; `save_every` separately controls checkpoint files.
+
 Checkpoints go to `checkpoints/connect4/<run-datetime>/` or
 `checkpoints/tic_tac_toe/<run-datetime>/`, with chronologically sortable local
 timestamps such as `2026-11-24_15-30-00-123456`. W&B keeps its default run naming.

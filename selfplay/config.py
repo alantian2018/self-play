@@ -8,6 +8,7 @@ class Args:
     checkpoint: str | None = None
     checkpoint_dir: str = "checkpoints"
     save_every: int = 10_000
+    snapshot_every: int | None = None  # None keeps the 10%-of-iterations fallback.
     seed: int | None = None
     num_iterations: int = 100_000
     games_per_update: int = 100
@@ -15,7 +16,7 @@ class Args:
     eval_every: int = 50  # Set to 0 to disable evaluation videos.
     eval_games: int = 64
     eval_num_envs: int = 32
-    max_opponents: int = 100
+    max_opponents: int = 500
     winrate_threshold: float = 0.7
     min_opponent_games: int = 200
     learning_rate: float = 2.5e-4

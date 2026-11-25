@@ -12,6 +12,7 @@ class Args(PPOArgs):
     games_per_update: int = 50
     num_envs: int = 50
     save_every: int = 10_000
+    snapshot_every: int | None = None
     eval_every: int = 1000
     eval_games: int = 64
     eval_num_envs: int = 32
