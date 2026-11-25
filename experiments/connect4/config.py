@@ -8,7 +8,7 @@ class Args(PPOArgs):
     experiment: str = "connect4"
     wandb_project: str = "self-play-connect4"
     checkpoint_dir: str = "checkpoints/connect4"
-    num_iterations: int = 100_000
+    num_iterations: int = 200_000
     games_per_update: int = 50
     num_envs: int = 50
     save_every: int = 10_000

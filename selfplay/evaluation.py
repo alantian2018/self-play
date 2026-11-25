@@ -28,7 +28,7 @@ def game_video(experiment, record, reward):
 
 
 def evaluate(agent, self_play, experiment=None, num_games=64, num_envs=32):
-    """Evaluate seat-aware matchups in batches, with a loss-preferred replay."""
+    """Evaluate seat-aware matchups in batches, with a sampled game's replay."""
     if num_games < 1 or num_envs < 1:
         raise ValueError("eval_games and eval_num_envs must be at least 1")
     experiment = experiment or get_experiment('connect4')

@@ -1,4 +1,5 @@
 from copy import deepcopy
+import warnings
 
 import numpy as np
 import torch
@@ -10,6 +11,7 @@ def save_checkpoint(path, agent, optimizer, self_play, iteration, last_snapshot,
     torch.save({
         "agent": agent.state_dict(),
         "policy_class": f"{type(agent).__module__}.{type(agent).__qualname__}",
+        "policy_version": getattr(agent, "policy_version", 1),
         "optimizer": optimizer.state_dict(),
         "opponents": [opp.state_dict() for opp in self_play.opponents],
         "opponent_ids": self_play.opponent_ids,
@@ -53,5 +55,10 @@ def load_checkpoint(path, agent, optimizer, self_play, make_agent=None):
     ]
     self_play.random_winrates = np.array(state["random_winrates"])
     self_play.alpha = state["alpha"]
+    if state.get("policy_version", 1) != getattr(agent, "policy_version", 1):
+        self_play.winrates = [np.full(2, 0.5) for _ in self_play.opponents]
+        self_play.opponent_games = [np.zeros(2, dtype=int) for _ in self_play.opponents]
+        self_play.random_winrates = np.full(2, 0.5)
+        warnings.warn("Policy behavior changed; reset saved opponent scores and game counts.", stacklevel=2)
     self_play.trim_opponents()
     return state

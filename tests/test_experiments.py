@@ -227,6 +227,81 @@ class ExperimentsTest(unittest.TestCase):
             original.close()
             mirrored.close()
 
+    def test_tic_tac_toe_all_eight_symmetries_and_action_mapping(self):
+        experiment = get_experiment('tic_tac_toe')
+        agent = experiment.make_agent()
+        self.assertEqual(len({tuple(p.tolist()) for p in agent.symmetry_indices}), 8)
+        self.assertNotIn('symmetry_indices', agent.state_dict())
+        sequences = ([], [0, 4, 1], [0, 4, 1, 2], [0, 4, 6, 3, 1])
+        env = experiment.make_env()
+        observations = []
+        try:
+            for moves in sequences:
+                env.reset()
+                for action in moves:
+                    env.step(action)
+                obs, *_ = env.last()
+                observations.append(obs)
+            boards = torch.tensor(np.stack([o['observation'] for o in observations]), dtype=torch.float32)
+            masks = torch.tensor(np.stack([o['action_mask'] for o in observations]), dtype=torch.bool)
+            logits, values = agent.get_logits_and_value(boards)
+            torch.testing.assert_close(logits, agent.get_logits(boards))
+            probabilities = logits.masked_fill(~masks, -torch.inf).softmax(-1)
+            for permutation, inverse in zip(agent.symmetry_indices, agent.inverse_indices):
+                torch.testing.assert_close(permutation[inverse], torch.arange(9))
+                transformed = boards.reshape(-1, 9, 2)[:, permutation].reshape(-1, 3, 3, 2)
+                transformed_masks = masks[:, permutation]
+                other_logits, other_values = agent.get_logits_and_value(transformed)
+                torch.testing.assert_close(other_logits, logits[:, permutation])
+                torch.testing.assert_close(other_values, values)
+                other_probabilities = other_logits.masked_fill(~transformed_masks, -torch.inf).softmax(-1)
+                torch.testing.assert_close(other_probabilities, probabilities[:, permutation])
+                # Replay transformed actions in PettingZoo itself, not just array math.
+                for i, moves in enumerate(sequences):
+                    env.reset()
+                    for action in moves:
+                        env.step(int(inverse[action]))
+                    obs, *_ = env.last()
+                    np.testing.assert_array_equal(obs['observation'], transformed[i].numpy())
+                    np.testing.assert_array_equal(obs['action_mask'], transformed_masks[i].numpy())
+                actions = torch.tensor([int(np.flatnonzero(o['action_mask'])[0]) for o in observations])
+                _, logprob, entropy, _ = agent.get_action_and_value(boards, masks, actions)
+                _, other_logprob, other_entropy, _ = agent.get_action_and_value(transformed, transformed_masks, inverse[actions])
+                torch.testing.assert_close(logprob, other_logprob)
+                torch.testing.assert_close(entropy, other_entropy)
+            empty_probabilities = probabilities[0]
+            torch.testing.assert_close(empty_probabilities[[0, 2, 6, 8]], empty_probabilities[0].expand(4))
+            torch.testing.assert_close(empty_probabilities[[1, 3, 5, 7]], empty_probabilities[1].expand(4))
+            (logprob.sum() + values.sum()).backward()
+            self.assertTrue(all(p.grad is not None and torch.isfinite(p.grad).all() for p in agent.parameters()))
+            sampled = agent.act_batch(observations)
+            self.assertTrue(all(obs['action_mask'][a] for obs, a in zip(observations, sampled)))
+        finally:
+            env.close()
+
+    def test_changed_policy_version_resets_old_sampling_statistics(self):
+        experiment = get_experiment('tic_tac_toe')
+        agent = experiment.make_agent()
+        pool = SelfPlay()
+        pool.add_opponent(agent)
+        pool.winrates[0][:] = [0.9, 0.1]
+        pool.opponent_games[0][:] = [100, 200]
+        pool.random_winrates[:] = [0.95, 0.8]
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / 'before_symmetry.pt'
+            save_checkpoint(path, agent, torch.optim.Adam(agent.parameters()), pool, 10, 5, 300)
+            state = torch.load(path, weights_only=True)
+            del state['policy_version']
+            torch.save(state, path)
+            restored = experiment.make_agent()
+            restored_pool = SelfPlay()
+            with self.assertWarnsRegex(UserWarning, 'Policy behavior changed'):
+                load_checkpoint(path, restored, torch.optim.Adam(restored.parameters()), restored_pool, experiment.make_agent)
+            self.assert_state_equal(agent.state_dict(), restored.state_dict())
+            np.testing.assert_array_equal(restored_pool.winrates, [[0.5, 0.5]])
+            np.testing.assert_array_equal(restored_pool.opponent_games, [[0, 0]])
+            np.testing.assert_array_equal(restored_pool.random_winrates, [0.5, 0.5])
+
     def test_checkpoint_resume_and_lowest_winrate_logging(self):
         for name in ('connect4', 'tic_tac_toe'):
             with self.subTest(experiment=name), TemporaryDirectory() as temp:
@@ -402,7 +477,7 @@ class ExperimentsTest(unittest.TestCase):
         metrics = evaluate(tic.make_agent(), SelfPlay(), experiment, num_games=5, num_envs=3)
         self.assertTrue(Path(metrics['eval/video']._path).is_file())
 
-    def test_evaluation_metrics_by_seat_and_loss_video(self):
+    def test_evaluation_metrics_by_seat_and_sampled_video(self):
         tic = get_experiment('tic_tac_toe')
         pairs = [(SimpleNamespace(reward=[r]), None) for r in (-1, 1, 0, 1)]
         records = [{'opponent': 0, 'starting_idx': seat, 'actions': []} for seat in (0, 0, 1, 1)]
@@ -411,11 +486,12 @@ class ExperimentsTest(unittest.TestCase):
             records.extend([{'opponent': 0, 'starting_idx': seat, 'actions': []} for seat in (0, 0, 1, 1)])
             return pairs
 
-        with patch.object(SelfPlay, 'play_games', autospec=True, side_effect=play), patch('selfplay.evaluation.game_video', return_value='video') as video:
+        with patch.object(SelfPlay, 'play_games', autospec=True, side_effect=play), patch('selfplay.evaluation.game_video', return_value='video') as video, patch('selfplay.evaluation.np.random.choice', return_value=2) as choice:
             metrics = evaluate(tic.make_agent(), SelfPlay(), tic, num_games=4, num_envs=2)
         self.assertEqual(metrics, {'eval/mean_reward': 0.25, 'eval/video': 'video', 'eval/win_rate_first': 0.5, 'eval/win_rate_second': 0.5, 'eval/second_player_fraction': 0.5})
-        self.assertEqual(video.call_args.args[1], records[0])
-        self.assertEqual(video.call_args.args[2], -1)
+        np.testing.assert_array_equal(choice.call_args.args[0], np.arange(4))
+        self.assertEqual(video.call_args.args[1], records[2])
+        self.assertEqual(video.call_args.args[2], 0)
 
     def test_second_player_win_loss_draw_and_ppo_reward_signal(self):
         experiment = get_experiment('tic_tac_toe')

@@ -50,6 +50,15 @@ using vertical flips or rotations. Tic-tac-toe's policy is independent.
 Existing Connect 4 weights still load, but this changes their predictions and
 those of frozen opponents; start a fresh run to avoid stale saved win rates.
 
+Tic-tac-toe averages all eight rotations/reflections in a single inference batch.
+Action logits are mapped back to the original PettingZoo cell indices before
+averaging; values are invariant. Occupied-cell masks are applied afterward in the
+original coordinates. This adds eight-view network computation, not eight games.
+Existing weights still load, but their predictions change. Older tic-tac-toe
+checkpoints reset saved opponent scores and game counts on resume; newly saved
+checkpoints retain them. Custom policies can bump their optional `policy_version`
+when inference behavior changes without changing weight shapes.
+
 Connect 4 retains the existing settings, including 5% random opponents,
 seat-specific EMA scores with alpha 0.02, and promotion above 60% against every
 frozen opponent after more than 200 games each. Configure these gates with
@@ -106,10 +115,9 @@ panels are `eval/win_rate_first`, `eval/win_rate_second`, `eval/mean_reward`,
 `eval/second_player_fraction`, and `eval/video`. Win rates count wins only; draws are included in the denominator.
 If a small evaluation batch has no games in one seat, that seat's metric is omitted.
 
-`eval/video` replays one actual game from this evaluation batch, chosen randomly
-among losses when there are any, otherwise among all sampled games. Its caption
-identifies the current policy's seat, opponent, and result. Video selection is
-loss-biased; the aggregate evaluation rates describe the whole batch. Only the
+`eval/video` replays one actual game chosen uniformly from this evaluation batch.
+Its caption identifies the current policy's seat, opponent, and result. The
+aggregate evaluation rates describe the whole batch. Only the
 selected game is rendered. Configure these sizes in each experiment's config or
 with `--eval-games` and `--eval-num-envs`.
 
