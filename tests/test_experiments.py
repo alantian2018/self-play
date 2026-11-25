@@ -308,6 +308,7 @@ class ExperimentsTest(unittest.TestCase):
                 args = get_experiment(name).default_args()
                 args.seed, args.num_iterations, args.games_per_update = 3, 4, 5
                 args.num_envs, args.eval_every, args.update_epochs, args.save_every = 3, 0, 1, 2
+                args.snapshot_every = 1
                 args.max_opponents = 2  # Exercise eviction during training and resume.
                 args.checkpoint_dir = str(Path(temp) / 'full')
                 run = MagicMock()
@@ -329,6 +330,11 @@ class ExperimentsTest(unittest.TestCase):
                         lowest = min(rates, key=rates.get)
                         self.assertEqual(metrics['train/lowest_winrate_opponent'], lowest)
                         self.assertEqual(metrics['train/lowest_winrate'], rates[lowest])
+                        latest = max(rates)
+                        self.assertEqual(metrics['self_play/latest_opponent'], latest)
+                        self.assertEqual(metrics['winrate/latest'], rates[latest])
+                        self.assertEqual(metrics['winrate_first/latest'], metrics[f'winrate_first/opponent_{latest}'])
+                        self.assertEqual(metrics['winrate_second/latest'], metrics[f'winrate_second/opponent_{latest}'])
                     args.checkpoint = str(full_path.with_name('iteration_2.pt'))
                     args.checkpoint_dir = str(Path(temp) / 'resumed')
                     train(args)
@@ -384,6 +390,7 @@ class ExperimentsTest(unittest.TestCase):
             args = experiment.default_args()
             args.seed, args.num_iterations, args.games_per_update = 3, 4, 7
             args.num_envs, args.eval_every, args.update_epochs, args.save_every = 3, 0, 1, 2
+            args.snapshot_every = 1
             args.checkpoint_dir = str(Path(temp) / 'full')
             run, context = MagicMock(), MagicMock()
             run.id = 'test'

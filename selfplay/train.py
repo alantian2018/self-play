@@ -74,6 +74,10 @@ def train(args):
                     "train/lowest_winrate": mean_winrates[lowest],
                     "train/lowest_winrate_opponent": self_play.opponent_ids[lowest],
                     "self_play/opponents": len(self_play.opponents),
+                    "self_play/latest_opponent": self_play.opponent_ids[-1],
+                    "winrate/latest": self_play.winrates[-1].mean(),
+                    "winrate_first/latest": self_play.winrates[-1][0],
+                    "winrate_second/latest": self_play.winrates[-1][1],
                 })
                 winrates = {"random": self_play.random_winrates}
                 winrates.update({f"opponent_{i}": wr for i, wr in zip(self_play.opponent_ids, self_play.winrates)})
